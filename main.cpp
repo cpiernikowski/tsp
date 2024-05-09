@@ -15,6 +15,16 @@ int main(int argc, const char* const* argv) {
     std::cout << (std::string)cwg;
     Ant a(cwg);
     a.step();
+    std::cout << a.current();
+    a.step();
+    std::cout << a.current();
+    a.step();
+    std::cout << a.current();
+
+    std::cout << std::endl;
+    for (const auto& e : a.get_path()) {
+        std::cout << e << " ";
+    }
     
     
     

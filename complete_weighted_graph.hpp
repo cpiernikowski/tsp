@@ -9,13 +9,17 @@
 #include <memory>
 #include <iostream> // debug
 #include "utility.hpp"
+#include <cmath>
+#include <random>
+#include <algorithm>
+#include <utility>
 
 using weight_t = double;
 using pheromones_t = double;
 using vertex_t = std::size_t;
 using path_t = std::vector<vertex_t>;
 using connection_t = std::pair<vertex_t, vertex_t>;
-using probability_t = float;
+using probability_t = double;
 
 class CWGraph {
 public:
@@ -38,9 +42,10 @@ public:
         operator std::string() const { // debug?
             using namespace std::string_literals;
             return
-                "Pierwszy wierzchołek: "s + std::to_string(conn.first)
-                + " Drugi wierzchołek: "s + std::to_string(conn.second)
-                + " Waga: "s + std::to_string(w);
+                "Pierwszy wierzcholek: "s + std::to_string(conn.first)
+                + " Drugi wierzcholek: "s + std::to_string(conn.second)
+                + " Waga: "s + std::to_string(w)
+                + " Feromony: "s + std::to_string(ph);
         }
 #endif
     };
@@ -54,11 +59,6 @@ private:
     }
 
 public:
-
-    friend bool operator==(const connection_t& lhs, const connection_t& rhs) { //czy napewno potrzebne?
-        return (lhs.first == rhs.first && lhs.second == rhs.second) ||
-               (lhs.first == rhs.second && lhs.second == rhs.first);
-    }
     
     CWGraph(std::size_t n_of_vertices) noexcept(noexcept(decltype(edges)()))
         : n{n_of_vertices} {
@@ -125,9 +125,11 @@ public:
     }
 };
 
+template <double A = 1.0, double B = 1.0, double R = 0.2>
 class Ant {
-    static constexpr double ALPHA = 1.0;
-    static constexpr double BETA = 1.0;
+    static constexpr double ALPHA = A;
+    static constexpr double BETA = B;
+    static constexpr double RHO = R;
 
     path_t visited; // current in visited[visited.size() - 1]
     const CWGraph& graph;
@@ -138,11 +140,15 @@ class Ant {
     }
 
 public:
+    const path_t& get_path() const noexcept { // debug?
+        return visited;
+    }
+
     Ant(const CWGraph& g)
         : graph(g) {
         assert(graph.size() > 0);
-        visited.reserve(graph.size());
-        visited.push_back(g.cedges()[0].conn.first);
+        visited.reserve(graph.size() + 1); // + 1 bo bedziemy wracac do pierwszego
+        visited.push_back(graph.cedges()[0].conn.first);
     }
 
     vertex_t& current() {
@@ -155,7 +161,7 @@ public:
         SECOND = 1
     };
 
-    static Which is_possible_connection(vertex_t v, connection_t conn) {
+    static Which is_possible_connection(vertex_t v, const connection_t& conn) {
         // -1 jesli conn.first jest rowny, 1 jestli conn.second jest rowny, 0 jesli zaden
         std::cout << v << " " << conn.first << " " << conn.second << std::endl; // debug
         assert(conn.first != conn.second);
@@ -176,31 +182,106 @@ public:
 
         }
 
-        static constexpr float PROBABILITY_NOT_YET_COMPUTED = -1.0f;
+        static constexpr probability_t PROBABILITY_NOT_YET_COMPUTED = static_cast<probability_t>(-1);
 
         const CWGraph::Edge* edge = nullptr;
         Which which = Which::INVALID;
         probability_t probability = PROBABILITY_NOT_YET_COMPUTED;
 
-        void compute_probability() {
+        vertex_t vertex() const noexcept { // mozliwe ze bedzie niepotrzebne?
+            assert(which != Which::INVALID);
+            return which == Which::FIRST ? edge->conn.first : edge->conn.second;
+        }
+
+        auto operator<=>(const PotentialChoice& rhs) const noexcept {
+            // zmienic na operator>? tylko on raczej potrzebny bo jedyne porownanie
+            // odbywa sie przy wywolaniu std::sort(..., std::greater{});
+            return probability <=> rhs.probability;
+        }
+    };
+
+    struct PotentialChoices {
+        PotentialChoice* choices;
+        std::size_t n;
+
+        PotentialChoices(std::size_t n_of_choices)
+            : n{n_of_choices}, choices{new PotentialChoice[n_of_choices]{}}  {
+
+        }
+
+        ~PotentialChoices() {
+            if (choices)
+                delete[] choices;
+        }
+
+        PotentialChoice& operator[](std::size_t i) noexcept {
+            assert(choices != nullptr && i < n);
+            return choices[i];
+        }
+
+        void compute_probabilities() noexcept {
+            assert(choices != nullptr);
+
+            probability_t sum_denom{};
+            for (std::size_t i = 0; i < n; ++i) {
+                assert(choices[i].which != Which::INVALID && choices[i].edge != nullptr);
+                sum_denom += std::pow(choices[i].edge->ph, ALPHA) * std::pow(1 / choices[i].edge->w, BETA);
+            }
+
+            for (std::size_t i = 0; i < n; ++i) {
+                // oblicz dla kazdego PotentialChoice probability (licznik / sum_denom)
+                choices[i].probability = (std::pow(choices[i].edge->ph, ALPHA) * std::pow(1 / choices[i].edge->w, BETA))
+                                         / sum_denom;
+            }
+        }
+
+        vertex_t vertex_to_visit() {
+            assert(n > 0);
+            std::sort(choices, std::next(choices, n), std::greater{}); // na pewno nie n+1?
+            static std::random_device rd;
+            static std::mt19937 mt(rd());
+            static_assert(std::is_floating_point_v<probability_t>);
+            static std::uniform_real_distribution<probability_t> dis(0.0, 1.0);
+            const probability_t r = dis(mt);
+
+            auto sum = [this] (std::size_t i) -> probability_t {
+                probability_t out{};
+                for (; i < n; ++i) {
+                    out += choices[i].probability;
+                }
+                return out;
+            };
             
+            probability_t earlier_s = sum(0);
+            for (int i = 1; i < n; ++i) {
+                probability_t current_s = sum(i);
+            
+                if (r > current_s && r <= earlier_s) {
+                    return choices[i - 1].vertex();
+                }
+
+                earlier_s = current_s;
+            }
+
+            return choices[n - 1].vertex();
         }
     };
 
     void step() {
+        assert(visited.size() < graph.size());
         const std::size_t n_of_choices = graph.size() - visited.size();
-        std::cout << n_of_choices << std::endl;
-        PotentialChoice* choices = new PotentialChoice[n_of_choices]{}; // ewentualnie zamienic na vector i vector.reserve(n_of_choices)
+        std::cout << n_of_choices << std::endl; // debug
+        PotentialChoices choices(n_of_choices);
         const auto& edges = graph.cedges();
 
+        // populate potential choices, przeniesc do tamtej klasy jako funkcja?
         std::size_t i = 0;
         std::size_t j = 0;
-        for (; i < n_of_choices; ++j) {
+        for (; i < n_of_choices; ++j) { // <- ++j not ++i!
             const auto is_possible = is_possible_connection(current(), edges[j].conn);
             if (is_possible != Which::INVALID) {
                 if ((is_possible == Which::FIRST && util::contains(visited, edges[j].conn.first)) ||
                     (is_possible == Which::SECOND && util::contains(visited, edges[j].conn.second))) {
-                    //ten warunek chyba git, ale cos smierdzialo wczesniej
                     continue;
                 }
                 choices[i].edge = &edges[j];
@@ -209,19 +290,21 @@ public:
             }
         }
 
+        choices.compute_probabilities(); // sprawdzone
+#ifdef MY_DEBUG
+        std::cout << "Prawdopodobienstwa:" << std::endl;
         for (int i = 0; i < n_of_choices; ++i) {
-            std::cout << (std::string)*choices[i].edge << std::endl; // debug
+            std::cout << choices[i].probability << std::endl;
         }
+        std::cout << "Koniec prawdopodobienstw" << std::endl;
+#endif
+        travel(choices.vertex_to_visit());
 
-        
+        //todo: gdy nie ma juz zadnych do odwiedzenia miast wybrac sie do miasta pierwszego (visited[0]) i zakocnzyc wedrowke
 
-        // obliczyc dla kazdego wedlug prezentacji probabilities / mozliwe ze trzeba bedzie je zapisac w potentialchoice, pewnie ta
-        // nastepnie wybrac konkretny za pomoca warunkopw z prezentacji i wykonac travel()
-        // sprawdzic cczy to nie jest koneic wedrowki, porownanie visited.size() z graph.ccedges().size()? cos takiego jeszczep omysl
+        // sprawdzic cczy to nie jest koneic wedrowki, porownanie visited.size() z graph.ccedges().size()? cos takiego jeszczep omysl/
         // jesli jest koniec to wywolac sprzezenia zwrotne dodatnie i ujemne na grafie, zdefiniuj te zachwoanai w grafie raczej? graf wtedy bedzie non-const&
         // kazde sprzezenie zwrotne bedzie oddzielnei wyzwalane chyba dla kazdej mrowki, tak bedzie latwiej, dlatego moze jednak te zachowania nei w grafie, tylko w mrowce
-        //todo: sprawdz na sztywno czy dobrze dodaje choices itp
-
     }
 };
 

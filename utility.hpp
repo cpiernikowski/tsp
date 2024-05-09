@@ -10,6 +10,7 @@ namespace util {
 
 template <typename T>
 requires std::is_arithmetic_v<T>
+[[gnu::const]]
 T factorial(T t) noexcept {
     assert (t > 0);
     T out = 1;
