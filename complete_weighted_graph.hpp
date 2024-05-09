@@ -161,15 +161,16 @@ public:
         SECOND = 1
     };
 
-    static Which is_possible_connection(vertex_t v, const connection_t& conn) {
-        // -1 jesli conn.first jest rowny, 1 jestli conn.second jest rowny, 0 jesli zaden
-        std::cout << v << " " << conn.first << " " << conn.second << std::endl; // debug
-        assert(conn.first != conn.second);
-        using T = std::underlying_type_t<Which>;
-        T out = 0;
-        out += static_cast<T>(conn.first == v); // mozna polaczyc z conn.second
-        out -= static_cast<T>(conn.second == v); // mozna polaczyc z conn.first
-        return static_cast<Which>(out);
+    static Which is_possible_connection(vertex_t v, const connection_t& conn) noexcept {
+        Which out;
+        if (conn.first == v) {
+            out = Which::SECOND;
+        } else if (conn.second == v) {
+            out = Which::FIRST;
+        } else {
+            out = Which::INVALID;
+        }
+        return out;
     }
 
     struct PotentialChoice {
@@ -182,7 +183,7 @@ public:
 
         }
 
-        static constexpr probability_t PROBABILITY_NOT_YET_COMPUTED = static_cast<probability_t>(-1);
+        static constexpr probability_t PROBABILITY_NOT_YET_COMPUTED = static_cast<probability_t>(-1); // mozliwe ze niepotrzebne
 
         const CWGraph::Edge* edge = nullptr;
         Which which = Which::INVALID;
@@ -195,7 +196,7 @@ public:
 
         auto operator<=>(const PotentialChoice& rhs) const noexcept {
             // zmienic na operator>? tylko on raczej potrzebny bo jedyne porownanie
-            // odbywa sie przy wywolaniu std::sort(..., std::greater{});
+            // odbywa sie przy wywolaniu std::sort(..., std::greater{}); 
             return probability <=> rhs.probability;
         }
     };
@@ -215,6 +216,11 @@ public:
         }
 
         PotentialChoice& operator[](std::size_t i) noexcept {
+            assert(choices != nullptr && i < n);
+            return choices[i];
+        }
+
+        const PotentialChoice& operator[](std::size_t i) const noexcept {
             assert(choices != nullptr && i < n);
             return choices[i];
         }
@@ -253,7 +259,7 @@ public:
             };
             
             probability_t earlier_s = sum(0);
-            for (int i = 1; i < n; ++i) {
+            for (std::size_t i = 1; i < n; ++i) {
                 probability_t current_s = sum(i);
             
                 if (r > current_s && r <= earlier_s) {
