@@ -1,9 +1,9 @@
 #include <cstdlib>
 #define MY_DEBUG
 #include "complete_weighted_graph.hpp"
-#include <iostream> // debug?
+#include <iostream> // debug?f
 
-int main(int argc, const char* const* argv) {
+int main([[maybe_unused]] int argc, [[maybe_unused]] const char* const* argv) {
     CWGraph cwg(4);
     cwg.add_edge({1, 2}, 12, 0.4);
     cwg.add_edge({1, 3}, 4, 0.7);
@@ -20,6 +20,8 @@ int main(int argc, const char* const* argv) {
     std::cout << a.current();
     a.step();
     std::cout << a.current();
+    // przy kolejnym stepie juz wywala, bo nie ma gdzie juz sie udac - musi wrocic do poczatku, trzeba to zaimplementowac
+    
 
     std::cout << std::endl;
     for (const auto& e : a.get_path()) {

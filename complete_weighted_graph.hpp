@@ -54,13 +54,13 @@ private:
     std::vector<Edge> edges;
     const std::size_t n; // zawsze ma byc wiadome przed konstrukcja, ile bedzie wierzcholkow
 
-    decltype(n) n_of_edges() const noexcept {
+    std::size_t n_of_edges() const noexcept {
         return util::factorial(n - 1);
     }
 
 public:
     
-    CWGraph(std::size_t n_of_vertices) noexcept(noexcept(decltype(edges)()))
+    CWGraph(std::size_t n_of_vertices)
         : n{n_of_vertices} {
         assert(n > 0);
         edges.reserve(n_of_edges());
@@ -106,9 +106,9 @@ public:
     }
 
     std::optional<std::reference_wrapper<const Edge>> edge(const connection_t& c) const {
-       return std::move(util::find_if_optional(edges, [&] (auto&& e) {
+       return util::find_if_optional(edges, [&] (auto&& e) {
             return e == c;
-       }));
+       });
     }
     //
 
@@ -116,7 +116,7 @@ public:
         return v <= n;
     }
 
-    decltype(n) size() const noexcept {
+    auto size() const noexcept {
         return n;
     }
 
@@ -156,12 +156,13 @@ public:
     }
 
     enum class Which : std::int8_t {
-        FIRST = -1,
-        INVALID = 0,
-        SECOND = 1
+        FIRST,
+        SECOND,
+        INVALID
     };
 
     static Which is_possible_connection(vertex_t v, const connection_t& conn) noexcept {
+        //todo: zmienic nazwe na taka ktora nie bedzie brzmiala jakby funkcja zwracala boola
         Which out;
         if (conn.first == v) {
             out = Which::SECOND;
@@ -202,8 +203,8 @@ public:
     };
 
     struct PotentialChoices {
-        PotentialChoice* choices;
         std::size_t n;
+        PotentialChoice* choices;
 
         PotentialChoices(std::size_t n_of_choices)
             : n{n_of_choices}, choices{new PotentialChoice[n_of_choices]{}}  {
@@ -243,13 +244,16 @@ public:
 
         vertex_t vertex_to_visit() {
             assert(n > 0);
-            std::sort(choices, std::next(choices, n), std::greater{}); // na pewno nie n+1?
             static std::random_device rd;
             static std::mt19937 mt(rd());
             static_assert(std::is_floating_point_v<probability_t>);
             static std::uniform_real_distribution<probability_t> dis(0.0, 1.0);
+
             const probability_t r = dis(mt);
 
+            // sprobuj podejsc inaczej do tej sumy - 
+            // moze najpierw obliczyc cala, a z kolejnymi iteracjami petli tej nizszej
+            // odejmowac probability nastepnego? cos w tym stylu pokmin
             auto sum = [this] (std::size_t i) -> probability_t {
                 probability_t out{};
                 for (; i < n; ++i) {
@@ -257,6 +261,8 @@ public:
                 }
                 return out;
             };
+
+            std::sort(choices, std::next(choices, n), std::greater{});
             
             probability_t earlier_s = sum(0);
             for (std::size_t i = 1; i < n; ++i) {
@@ -284,7 +290,7 @@ public:
         std::size_t i = 0;
         std::size_t j = 0;
         for (; i < n_of_choices; ++j) { // <- ++j not ++i!
-            const auto is_possible = is_possible_connection(current(), edges[j].conn);
+            const Which is_possible = is_possible_connection(current(), edges[j].conn);
             if (is_possible != Which::INVALID) {
                 if ((is_possible == Which::FIRST && util::contains(visited, edges[j].conn.first)) ||
                     (is_possible == Which::SECOND && util::contains(visited, edges[j].conn.second))) {
@@ -299,7 +305,7 @@ public:
         choices.compute_probabilities(); // sprawdzone
 #ifdef MY_DEBUG
         std::cout << "Prawdopodobienstwa:" << std::endl;
-        for (int i = 0; i < n_of_choices; ++i) {
+        for (std::size_t i = 0; i < n_of_choices; ++i) {
             std::cout << choices[i].probability << std::endl;
         }
         std::cout << "Koniec prawdopodobienstw" << std::endl;
