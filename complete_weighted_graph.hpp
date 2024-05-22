@@ -88,27 +88,36 @@ public:
     }
 #endif
 
-    //mozee niepotrzebne bedzie
-    std::optional<weight_t> weight(const connection_t& c) const {
-        auto&& elem = util::find_if_optional(edges, [&] (auto&& e) {
+    // zakladamy, ze te 3 funkcje będą wywołane z istniejącym połączeniem jako argument, nieistniejące połączenia nie są obsługiwane jako błąd w tych funkcjach,
+    // z zdefiniowanym NDEBUG przed błędem chroni assert
+    weight_t weight(const connection_t& c) const {
+        auto&& res = std::ranges::find_if(edges, [&c] (const auto& e) {
             return e == c;
         });
 
-        return elem ? std::optional(elem->get().w) : std::nullopt;
+        assert(res != edges.end());
+
+        return res->w;
     }
 
-    std::optional<pheromones_t> pheromones(const connection_t& c) const {
-        auto&& elem = util::find_if_optional(edges, [&] (auto&& e) {
+    pheromones_t pheromones(const connection_t& c) const {
+        auto&& res = std::ranges::find_if(edges, [&c] (const auto& e) {
             return e == c;
         });
 
-        return elem ? std::optional(elem->get().ph) : std::nullopt;
+        assert(res != edges.end());
+
+        return res->ph;
     }
 
-    std::optional<std::reference_wrapper<const Edge>> edge(const connection_t& c) const {
-       return util::find_if_optional(edges, [&] (auto&& e) {
+    const Edge& edge(const connection_t& c) const {
+        auto&& res = std::ranges::find_if(edges, [&c] (const auto& e) {
             return e == c;
-       });
+        });
+
+        assert(res != edges.end());
+
+        return *res;
     }
     //
 
@@ -125,21 +134,28 @@ public:
     }
 };
 
-template <double A = 1.0, double B = 1.0, double R = 0.2>
 class Ant {
-    static constexpr double ALPHA = A;
-    static constexpr double BETA = B;
-    static constexpr double RHO = R;
+    static constexpr double ALPHA = 1;
+    static constexpr double BETA = 1;
+    static constexpr double RHO = 0.2; // ewentualnie zaimplementowac definiowanie tych wartosci przez uzytkownika
 
-    path_t visited; // current in visited[visited.size() - 1]
+    path_t visited{}; // current in visited[visited.size() - 1]
     const CWGraph& graph;
+    bool finished = false;
+    weight_t p_weight{};
 
     void travel(vertex_t v) {
         assert(graph.has_vertex(v));
+        p_weight += graph.weight(connection_t{visited.back(), v});
         visited.push_back(v);
     }
 
 public:
+
+    weight_t path_weight() const noexcept {
+        return p_weight;
+    }
+
     const path_t& get_path() const noexcept { // debug?
         return visited;
     }
@@ -148,10 +164,10 @@ public:
         : graph(g) {
         assert(graph.size() > 0);
         visited.reserve(graph.size() + 1); // + 1 bo bedziemy wracac do pierwszego
-        visited.push_back(graph.cedges()[0].conn.first);
+        visited.push_back(graph.cedges().at(0).conn.first);
     }
 
-    vertex_t& current() {
+    vertex_t& current() { // bez refa?
         return visited[visited.size() - 1];
     }
 
@@ -250,7 +266,9 @@ public:
             static std::uniform_real_distribution<probability_t> dis(0.0, 1.0);
 
             const probability_t r = dis(mt);
+            
 
+            
             // sprobuj podejsc inaczej do tej sumy - 
             // moze najpierw obliczyc cala, a z kolejnymi iteracjami petli tej nizszej
             // odejmowac probability nastepnego? cos w tym stylu pokmin
@@ -263,7 +281,7 @@ public:
             };
 
             std::sort(choices, std::next(choices, n), std::greater{});
-            
+
             probability_t earlier_s = sum(0);
             for (std::size_t i = 1; i < n; ++i) {
                 probability_t current_s = sum(i);
@@ -280,7 +298,17 @@ public:
     };
 
     void step() {
-        assert(visited.size() < graph.size());
+        assert(visited.size() <= graph.size());
+
+        if (visited.size() == graph.size()) {
+            // odwiedzono juz wszystkei miasta - trzeba wrocic do pierwszego
+            travel(graph.cedges().at(0).conn.first);
+
+            // zasygnalizowac, ze praca zostala skonczona (gdy wsztyskie morwki skoncza iteracje (znajda cala droge) to wtedy dopiero sprzezenia)
+            finished = true;
+            return;
+        }
+
         const std::size_t n_of_choices = graph.size() - visited.size();
         std::cout << n_of_choices << std::endl; // debug
         PotentialChoices choices(n_of_choices);
@@ -312,12 +340,22 @@ public:
 #endif
         travel(choices.vertex_to_visit());
 
-        //todo: gdy nie ma juz zadnych do odwiedzenia miast wybrac sie do miasta pierwszego (visited[0]) i zakocnzyc wedrowke
-
         // sprawdzic cczy to nie jest koneic wedrowki, porownanie visited.size() z graph.ccedges().size()? cos takiego jeszczep omysl/
         // jesli jest koniec to wywolac sprzezenia zwrotne dodatnie i ujemne na grafie, zdefiniuj te zachwoanai w grafie raczej? graf wtedy bedzie non-const&
         // kazde sprzezenie zwrotne bedzie oddzielnei wyzwalane chyba dla kazdej mrowki, tak bedzie latwiej, dlatego moze jednak te zachowania nei w grafie, tylko w mrowce
     }
+
+    void travel_whole_journey() {
+        while (!finished) {
+            step();
+        }
+    }
+};
+
+class AntColony {
+    // synchronizuje działanie mrówek, potrzebne ze względu na to, że sprzezenia zwrotne uruchamiane są dopiero,
+    // gdy wszystkie mrówki ukoncza swoja prace podczas jednej iteracji
+    // skladowe to std::vector<Ant>; licznik, ktory bedzie sprawdzal, czy juz zostala wykonana zadana ilosc iteracji; buffer na dotychczas najkrotsza droge
 };
 
 #endif

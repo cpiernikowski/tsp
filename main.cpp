@@ -14,19 +14,17 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] const char* const* argv) {
 
     std::cout << (std::string)cwg;
     Ant a(cwg);
-    a.step();
-    std::cout << a.current();
-    a.step();
-    std::cout << a.current();
-    a.step();
-    std::cout << a.current();
-    // przy kolejnym stepie juz wywala, bo nie ma gdzie juz sie udac - musi wrocic do poczatku, trzeba to zaimplementowac
+    a.travel_whole_journey();
+
+
     
 
     std::cout << std::endl;
     for (const auto& e : a.get_path()) {
         std::cout << e << " ";
     }
+
+    std::cout << std::endl << a.path_weight();
     
     
     
